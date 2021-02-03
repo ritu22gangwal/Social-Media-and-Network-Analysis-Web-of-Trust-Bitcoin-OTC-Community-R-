@@ -1,0 +1,417 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+# IDS 564 Final Project
+# Babandeep Singh UIN 669265932
+# Ritu Gangwal UIN 670646774
+
+# clearing the enviornment and loading the package
+```{r}
+ 
+getwd()
+# # Save the data file to a location on your hard drive and specify the path here (Windows systems use forward slashes)
+dir_path <-'C:/Users/ritu2/Desktop/UIC MSBA/Sem 2/Social media and network analysis IDS 564/Project'
+setwd(dir_path)
+
+# clear everything out of memory
+rm(list=ls()) 
+
+## Load package
+library(igraph)
+
+```
+
+
+# Inputting the Bitcoin OTC file
+```{r}
+
+infile<-"soc-sign-bitcoinotc.csv"
+data =read.csv(infile, header = TRUE, sep = ",", col.names = c('ratee', 'rater', 'Rating','Timing'))
+
+# dropping time stamp as it is not needed. 
+data = subset(data, select = -c(Timing))
+
+class(data) #data frame
+
+```
+
+
+# histograms of full graph, postive graph and negative graph
+```{r}
+
+# plot to visualize the weights / trust values. Looks like 0 - 3 values are favorite trust values. 
+# people in the network does not heavily trust anyone in the network, but they tend to distrust 
+# more than they fully trust 
+hist(data$Rating, main = 'Edge Weight Distribution')
+
+library(dplyr)
+# separting data in positive and negative groups 
+pos_edges = data %>% filter(Rating > 0)
+neg_edges = data %>% filter(Rating < 0)
+
+# histogram of positive edges wrt to ratings
+percent_positive = dim(pos_edges)[1] / dim(data)[1]
+percent_positive #  0.8998932
+hist(pos_edges$Rating, main = 'Positive Edge Weight Distribution')
+
+# histogram of negative edges wrt to ratings
+percent_negative= dim(neg_edges)[1] / dim(data)[1]
+percent_negative #  0.1001068
+hist(neg_edges$Rating, main = 'Negative Edge Weight Distribution')
+
+```
+
+
+# calculating no. of edges and vertices for all three graphs
+```{r}
+
+# Describe the data frame
+str(data)
+
+# Create the directed graph object
+df = graph.data.frame(data, directed = TRUE, vertices= NULL)
+# Edges - 35592
+ecount(df) 
+## Vertices - 5881
+vcount(df)
+
+is.simple(df)
+# TRUE it is a simple graph so, no need to work on anything duplicates 
+
+# Create the positive directed graph object
+pos_df = graph.data.frame(pos_edges, directed = TRUE, vertices= NULL)
+ecount(pos_df) # 32029
+vcount(pos_df) # 5573
+
+# Create the negative directed graph object
+neg_df = graph.data.frame(neg_edges, directed = TRUE, vertices= NULL)
+ecount(neg_df) # 3563
+vcount(neg_df) # 1606
+
+```
+
+
+# Plotting the network diagram
+```{r}
+# 
+# # Create edge weights
+# #Assigning weights as 1 to all edges
+ E(df)$weight <- 1
+# 
+# # plotting the graph
+ set.seed(2204)
+# 
+# # DrL is a force-directed graph layout toolbox focused on real-world large-scale graphs
+plot.igraph(df, main="Bitcoin OTC Community Network - Simplified DrL",
+             vertex.size = 6,
+             edge.color = "black",
+             vertex.color = "pink",
+             edge.arrow.size = 0.2,
+             layout = layout.drl,
+             vertex.label=NA
+ )
+ 
+# # Kamada.kawai layout
+ plot.igraph(df, main="Bitcoin OTC Community Network - Simplified Kamada Kawai",
+             vertex.size = 6,
+             edge.color = "black",
+             vertex.color = "blue",
+             edge.arrow.size = 0.2,
+             layout = layout.kamada.kawai,
+             vertex.label=NA
+ )
+ 
+# # graphopt layout
+ plot.igraph(df, main="Bitcoin OTC Community Network - Simplified Graphopt",
+             vertex.size = 6,
+             edge.color = "black",
+             vertex.color = "green",
+             edge.arrow.size = 0.2,
+              layout = layout.graphopt,
+             vertex.label=NA
+ )
+ 
+```
+
+
+# Measuring various network properties
+```{r}
+# reciprocity
+reciprocity(df) # 0.7923129
+
+# is it a connected graph
+is.connected(df) # FALSE
+
+# strongly connected clusters
+is.connected(df, mode="strong") # FALSE
+df_scc <- clusters(df, mode="strong")
+table(df_scc$csize)
+
+# weakly connected clusters
+is.connected(df, mode="weak") # FALSE
+df_wcc <- clusters(df, mode="weak")
+table(df_wcc$csize)
+
+# density of graph - The density of a graph is the ratio of the number of edges and the number of possible edges.
+graph.density(df) # 0.001029257
+
+# Avg. path length
+average.path.length(df, directed=TRUE) # 3.718913
+
+
+```
+
+
+# Normal and inverse weights for some network measures
+```{r}
+
+# Use the inverse of log weight for some of the network measure calculations
+# Can try either of the weighting schemes for various measures; they change the interpretation of the measures
+E(df)$weight <- E(df)$Rating
+
+#inverse weights, adding 12 (adding 11 to scale and 1 for inverse log) to scale to positive nos
+inv_weight <- 1/log(E(df)$weight  + 12)
+b <- data.frame(inv_weight)
+
+# regular weights scaled by value of 10
+num_weight<-E(df)$weight + 11
+
+length(inv_weight) # 35592, hence all edges are included
+
+# Diameter with both kinds of weights
+diameter(df, weights= num_weight) # 147
+diameter(df, weights= inv_weight) # 6.123736
+
+# Clustering - inv weights
+
+#global clustering
+transitivity(df, type = c("global"), vids = NULL, weights = inv_weight, isolates = c("NaN")) # 0.05923844
+
+#local average clustering
+clustering_OTC = transitivity(df, "local", weights = inv_weight, vids=V(df))
+clustering_avg = mean(clustering_OTC, na.rm = TRUE )  # 0.2882916
+clustering_stdev = sd(clustering_OTC, na.rm = TRUE ) # 0.3298311
+
+# Summarize the graph structure
+summary(df)
+
+# Clique structure: 
+table(sapply(maximal.cliques(df), length))
+A <- get.adjacency(df, sparse=FALSE)
+a <- largest.cliques(df)
+
+cliques <- c(a[[1]],a[[2]],a[[3]],a[[4]],a[[5]],a[[6]],a[[7]],a[[8]],a[[9]],a[[10]],a[[11]])
+clique_graph <- induced.subgraph(graph=df,vids=(cliques))
+plot(clique_graph, vertex.size = 15,
+     edge.color = "black",
+     vertex.color = "pink",
+     edge.arrow.size = 0.005,
+     main="cliques of size 11")
+
+# Embeddedness/ inverse of structural hole access (see Burt 2004)
+constraints_OTC <- round(constraint(df, nodes=V(df)), digits=4)
+hist(constraints_OTC)
+head(sort(constraints_OTC))
+
+# Hub and Authority Scores
+hub_OTC <- hub.score(df, weights=inv_weight)$vector
+auth_OTC <- authority.score(df, weights=inv_weight)$vector
+
+head(sort(hub_OTC, decreasing=TRUE))
+head(sort(auth_OTC, decreasing=TRUE))
+
+
+hubUser_average_weigth <- function(node_number) 
+{
+        weight <- filter(data, ratee == node_number)
+        return(mean(weight$Rating))
+  
+}
+
+AutUser_average_weigth <- function(node_number) 
+{
+        weight <- filter(data, rater == node_number)
+        return(mean(weight$Rating))
+  
+}
+
+hubUser_average_weigth(1810)
+AutUser_average_weigth(4531)
+
+```
+
+
+# Detecting level of trust
+```{r}
+# trail 
+
+hubUser_average_weigth(2642)
+AutUser_average_weigth(2642)
+ 
+hubUser_average_weigth(3665)
+AutUser_average_weigth(3665)
+
+node_seq <- c(2642,3665,35,2642,1810)
+
+for (val in node_seq) {
+        
+        print(paste(val, " Gave Average Rating of - ",hubUser_average_weigth(val) ))
+        
+        print(paste(val, " Recieved Average Rating of - ", AutUser_average_weigth(val)))
+        
+}
+
+```
+
+
+# Measuring network centrality measures
+```{r}
+E(df)$weight <- 1
+
+# Degree centrality
+degree_OTC <- degree(df)
+hist(degree_OTC)
+head(sort(degree_OTC, decreasing = TRUE)) 
+# 35 2642 1810 2125 2028  905 
+#1298  818  715  577  572  528 
+
+# in degree and out degree
+in_deg <- degree(df,v=V(df),mode="in")
+head(sort(in_deg, decreasing = TRUE))
+# 35 2642 1810 2028  905    1 
+#535  412  311  279  264  226 
+
+out_deg <- degree(df,v=V(df),mode="out")
+head(sort(out_deg, decreasing = TRUE))
+# 35 2642 1810 2125 2028  905 
+#763  406  404  397  293  264 
+
+# mean degree
+mean(degree_OTC) # 12.10406
+
+# Node betweenness
+nodebetweens_OTC <- round(betweenness(df, v=V(df), directed = TRUE, nobigint =TRUE, normalized = FALSE))
+head(sort(nodebetweens_OTC, decreasing=TRUE))
+#  35    2642    1810     905       1    4172 
+#4912540 2150220 1712299 1664216 1555486 1448350 
+
+# Edge betwenness
+edgebetweens_OTC <- edge.betweenness(df, e=E(df), directed = TRUE)
+head(sort(edgebetweens_OTC, decreasing=TRUE))
+# 204161.24 122836.94 102727.81  98349.91  91168.72  86102.41
+
+# strength of the nodes
+strength_node <- strength(df)
+head(sort(strength_node, decreasing=TRUE))
+# 35 2642 1810 2125 2028  905 
+#1298  818  715  577  572  528 
+
+
+# Closeness Centrality
+# No closeness measure for disconnected graphs - very small
+close_OTC <- closeness(df)
+print('closeness centrality is ')
+head(sort(close_OTC, decreasing=TRUE))
+
+
+# Eigen Centrality
+eig_OTC <- evcent(df)$vector
+head(sort(eig_OTC, decreasing=TRUE))
+#   2642       905      1810        35      2028      4172 
+# 1.0000000 0.9662525 0.8851323 0.8038920 0.7740032 0.7321853 
+
+
+centralities <- cbind(degree_OTC, nodebetweens_OTC, edgebetweens_OTC, close_OTC, eig_OTC, hub_OTC, auth_OTC)
+cor.matrix = round(cor(centralities), 4)
+# degree, node betweeness and eigen vector centrality are positively correlated
+
+
+
+```
+```{r}
+
+```
+
+
+# Graphs for various relations between properties
+```{r}
+# Plots 1 and 2: Can run them together
+par(mfrow=c(1, 2))
+edge_frame<-data.frame(edgebetweens_OTC, num_weight, inv_weight)
+a_edge<-aggregate(edgebetweens_OTC ~ inv_weight, data=edge_frame, mean)
+plot(a_edge, col="blue", log="xy", xlab="Weight of edge", ylab="Average Betweenness of edges")
+node_frame<-data.frame(nodebetweens_OTC, constraints_OTC, clustering_OTC, degree_OTC)
+a_node<-aggregate(nodebetweens_OTC ~ clustering_OTC, data=node_frame, mean)
+plot(a_node, col="blue", log="xy", xlab="Clustering", ylab="Average Betweenness of nodes")
+
+
+# Plot set 2: Four plots 
+par(mfrow=c(2, 2))
+a_node<-aggregate(nodebetweens_OTC ~ degree_OTC, data=node_frame, mean)
+plot(a_node, col="blue", log="xy", xlab="Degree", ylab="Average Betweenness")
+a_edge<-aggregate(edgebetweens_OTC ~ num_weight, data=edge_frame, mean)
+plot(a_edge, col="blue", log="xy", xlab="Weight of edge", ylab="Average Betweenness of edges")
+a_node<-aggregate(clustering_OTC ~ degree_OTC, data=node_frame, mean)
+plot(a_node, col="blue", log="xy", xlab="Degree", ylab="Average Clustering")
+a_node<-aggregate(constraints_OTC ~ degree_OTC, data=node_frame, mean)
+plot(a_node, col="blue", log="xy", xlab="Degree", ylab="Average Constraint (Embeddedness)")
+
+
+# Log-log degree distributino
+par(mfrow=c(1, 2))
+d.net <-degree(df)
+dd.net <- degree.distribution(df)
+d <- 1:max(d.net)-1
+ind <- (dd.net != 0)
+plot(d[ind], dd.net[ind], log="xy", col="blue",
+     xlab=c("Log-Degree"), ylab=c("Log-Intensity"),
+     main="Log-Log Degree Distribution")
+
+
+# Average neighbor degree versus vertex degree
+a.nn.deg <- graph.knn(df,V(df))$knn
+plot(d.net, a.nn.deg, log="xy", 
+     col="goldenrod", xlab=c("Log Vertex Degree"),
+     ylab=c("Log Average Neighbor Degree"), main ="k-NN degree measure" )
+
+```
+
+
+# Community detection
+```{r}
+# Community Detection
+E(df)$weight <- 1
+
+# no fast greedy and spinglass as it is a directed graph
+
+# walktrap community
+OTC_walk <- walktrap.community(df, merges = T, modularity = T)
+plot(OTC_walk,df, vertex.label= NA, vertex.size=6, edge.arrow.size = 0.2, layout=layout_with_kk(df), main = "Walktrap community")
+length(OTC_walk) # 329
+modularity(OTC_walk) # 0.4277861
+
+# infomap community
+OTC_infomap <- infomap.community(df)
+plot(OTC_infomap, df, vertex.label= NA, vertex.size=6, layout=layout_with_kk(df),edge.arrow.size = 0.2, main = "Infomap community")
+length(OTC_infomap)# 426
+modularity(OTC_infomap) # 0.3500761
+
+```
+
+
+# ego network for node 35
+```{r} 
+
+installed.packages('corpustools')
+library(corpustools)
+
+g_ego = ego_semnet(df, '35')
+
+# igraph::get.data.frame(g_ego)
+plot_semnet(g_ego)
+
+```
+
+############################################# THE END ###############################################################
